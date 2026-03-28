@@ -1,0 +1,20 @@
+dataset_source: kaggle
+
+kaggle_dataset: imtkaggleteam/mental-health
+kaggle_file_path: ""
+
+combine_sentiment: true
+sentiment_kaggle_dataset: suchintikasarkar/sentiment-analysis-for-mental-health
+sentiment_kaggle_file_path: "Combined Data.csv"
+sentiment_max_rows: 20000
+
+data_path: data/sample_mental_health.csv
+
+target_mode: pace_state
+
+target_column: treatment
+
+drop_columns: []
+
+test_size: 0.2
+random_state: 42
