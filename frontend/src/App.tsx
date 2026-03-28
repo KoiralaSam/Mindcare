@@ -18,11 +18,12 @@ export default function App() {
           <Route path="/" element={<LandingPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
+          {/* Full paths + most-specific-first avoids RR7 nested matching falling through to `*`. */}
           <Route
-            path="/dashboard"
+            path="/dashboard/check-in/result"
             element={
               <ProtectedRoute>
-                <DashboardPage />
+                <CheckInResultPage />
               </ProtectedRoute>
             }
           />
@@ -35,18 +36,18 @@ export default function App() {
             }
           />
           <Route
-            path="/dashboard/check-in/result"
-            element={
-              <ProtectedRoute>
-                <CheckInResultPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
             path="/dashboard/safety"
             element={
               <ProtectedRoute>
                 <SafetySupportPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/dashboard"
+            element={
+              <ProtectedRoute>
+                <DashboardPage />
               </ProtectedRoute>
             }
           />

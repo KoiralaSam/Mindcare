@@ -1,11 +1,19 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { ThemeToggle } from '../components/landing/ThemeToggle'
+
+function safeRedirectPath(from: unknown): string | null {
+  if (typeof from !== 'string' || !from.startsWith('/')) return null
+  if (from.startsWith('//')) return null
+  return from
+}
 
 export function LoginPage() {
   const { email, signIn } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
+  const redirectTo = safeRedirectPath((location.state as { from?: string } | null)?.from)
   const [value, setValue] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -13,9 +21,9 @@ export function LoginPage() {
 
   useEffect(() => {
     if (email) {
-      navigate('/dashboard', { replace: true })
+      navigate(redirectTo ?? '/dashboard', { replace: true })
     }
-  }, [email, navigate])
+  }, [email, navigate, redirectTo])
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -37,7 +45,7 @@ export function LoginPage() {
       setError(err)
       return
     }
-    navigate('/dashboard', { replace: true })
+    navigate(redirectTo ?? '/dashboard', { replace: true })
   }
 
   return (

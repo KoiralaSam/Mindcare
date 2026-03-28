@@ -431,6 +431,15 @@ body {
     filter 0.18s ease;
 }
 
+a.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  text-align: center;
+  box-sizing: border-box;
+}
+
 .btn--primary {
   background: var(--accent);
   color: #f8fffc;
@@ -864,6 +873,15 @@ body {
   font-weight: 600;
   color: var(--accent);
   text-decoration: none;
+}
+
+button.dash-zone-pill__link {
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
 }
 
 .dash-zone-pill__link:hover {
