@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- context + hook pattern */
 import {
   createContext,
   useCallback,
@@ -6,41 +7,99 @@ import {
   useState,
   type ReactNode,
 } from 'react'
+import { readRegistry, registerUser, verifyCredentials } from './registry'
+import type { SignUpPayload, UserProfile } from './types'
 
-const STORAGE_KEY = 'g7:user-email'
+const SESSION_KEY = 'g7:session'
+const LEGACY_EMAIL_KEY = 'g7:user-email'
+
+type Session = {
+  email: string
+  profile: UserProfile | null
+}
 
 type AuthContextValue = {
   email: string | null
-  signIn: (email: string) => void
+  profile: UserProfile | null
+  signIn: (email: string, password: string) => Promise<string | null>
+  signUp: (payload: SignUpPayload) => Promise<string | null>
   signOut: () => void
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
 
-function readStoredEmail(): string | null {
+function readSession(): Session | null {
   try {
-    return sessionStorage.getItem(STORAGE_KEY)
+    const raw = sessionStorage.getItem(SESSION_KEY)
+    if (raw) {
+      const s = JSON.parse(raw) as Session
+      if (s && typeof s.email === 'string') {
+        return { email: s.email, profile: s.profile ?? null }
+      }
+    }
+    const legacy = sessionStorage.getItem(LEGACY_EMAIL_KEY)
+    if (legacy) {
+      const migrated: Session = { email: legacy, profile: null }
+      sessionStorage.setItem(SESSION_KEY, JSON.stringify(migrated))
+      sessionStorage.removeItem(LEGACY_EMAIL_KEY)
+      return migrated
+    }
   } catch {
-    return null
+    /* ignore */
   }
+  return null
+}
+
+function writeSession(session: Session | null) {
+  if (!session) {
+    sessionStorage.removeItem(SESSION_KEY)
+    sessionStorage.removeItem(LEGACY_EMAIL_KEY)
+    return
+  }
+  sessionStorage.setItem(SESSION_KEY, JSON.stringify(session))
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [email, setEmail] = useState<string | null>(readStoredEmail)
+  const initial = readSession()
+  const [email, setEmail] = useState<string | null>(initial?.email ?? null)
+  const [profile, setProfile] = useState<UserProfile | null>(initial?.profile ?? null)
 
-  const signIn = useCallback((next: string) => {
-    sessionStorage.setItem(STORAGE_KEY, next)
-    setEmail(next)
+  const signIn = useCallback(async (nextEmail: string, password: string) => {
+    const result = await verifyCredentials(nextEmail, password)
+    if (!result.ok) {
+      return 'Invalid email or password.'
+    }
+    const key = nextEmail.trim().toLowerCase()
+    const session: Session = { email: key, profile: result.profile }
+    writeSession(session)
+    setEmail(key)
+    setProfile(result.profile)
+    return null
+  }, [])
+
+  const signUp = useCallback(async (payload: SignUpPayload) => {
+    const err = await registerUser(payload)
+    if (err) return err
+    const key = payload.email.trim().toLowerCase()
+    const registry = readRegistry()
+    const row = registry[key]
+    if (!row) return 'Registration failed. Try again.'
+    const session: Session = { email: key, profile: row.profile }
+    writeSession(session)
+    setEmail(key)
+    setProfile(row.profile)
+    return null
   }, [])
 
   const signOut = useCallback(() => {
-    sessionStorage.removeItem(STORAGE_KEY)
+    writeSession(null)
     setEmail(null)
+    setProfile(null)
   }, [])
 
   const value = useMemo(
-    () => ({ email, signIn, signOut }),
-    [email, signIn, signOut],
+    () => ({ email, profile, signIn, signUp, signOut }),
+    [email, profile, signIn, signUp, signOut],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
