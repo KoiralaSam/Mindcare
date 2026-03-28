@@ -199,6 +199,12 @@ def predict(body: PredictBody) -> dict[str, Any]:
     }
 
 
+@app.post("/backend/predict")
+def backend_predict(body: PredictBody) -> dict[str, Any]:
+    """Alias endpoint for backend integrations using same request schema."""
+    return predict(body)
+
+
 @app.get("/model/info")
 def model_info() -> dict[str, Any]:
     bundle = get_bundle()
@@ -335,7 +341,9 @@ def _run_dev_server() -> None:
         )
         sys.exit(1)
 
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    host = os.environ.get("ML_HOST", "127.0.0.1")
+    port = int(os.environ.get("ML_PORT", "8000"))
+    uvicorn.run(app, host=host, port=port)
 
 
 if __name__ == "__main__":
