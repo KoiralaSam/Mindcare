@@ -30,7 +30,8 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/login", handler.LoginHandler(sqlDB))
-	mux.HandleFunc("POST /api/wellness-quiz", handler.WellnessQuizHandler())
+	mux.HandleFunc("GET /api/leaderboard", handler.LeaderboardHandler(sqlDB))
+	mux.HandleFunc("POST /api/wellness-quiz", handler.WellnessQuizHandler(sqlDB))
 	root := withCORS(mux)
 
 	addr := os.Getenv("HTTP_ADDR")

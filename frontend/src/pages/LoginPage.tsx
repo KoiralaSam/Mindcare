@@ -1,69 +1,108 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
+import { FlowShell } from '../components/flow/FlowShell'
+import { NlnCheckInFlow } from '../components/flow/NlnCheckInFlow'
+
+function safeRedirectPath(from: unknown): string | null {
+  if (typeof from !== 'string' || !from.startsWith('/')) return null
+  if (from.startsWith('//')) return null
+  return from
+}
 
 export function LoginPage() {
-  const { email, signIn } = useAuth()
+  const { email, wellnessCompleted, loginWithAPI } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
+  const redirectTo = safeRedirectPath((location.state as { from?: string } | null)?.from)
+  const showCheckIn = Boolean(email && !wellnessCompleted)
+
   const [value, setValue] = useState('')
   const [error, setError] = useState('')
+  const [pending, setPending] = useState(false)
 
   useEffect(() => {
-    if (email) {
-      navigate('/dashboard', { replace: true })
+    if (email && wellnessCompleted) {
+      navigate(redirectTo ?? '/dashboard', { replace: true })
     }
-  }, [email, navigate])
+  }, [email, wellnessCompleted, navigate, redirectTo])
 
-  function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     setError('')
     const trimmed = value.trim().toLowerCase()
-    const input = document.getElementById('login-email') as HTMLInputElement | null
-    if (!trimmed || !input?.checkValidity()) {
+    const emailInput = document.getElementById('login-email') as HTMLInputElement | null
+    if (!trimmed || !emailInput?.checkValidity()) {
       setError('Enter a valid email address.')
       return
     }
-    signIn(trimmed)
-    navigate('/dashboard', { replace: true })
+    setPending(true)
+    const err = await loginWithAPI({ email: trimmed })
+    setPending(false)
+    if (err) {
+      setError(err)
+      return
+    }
   }
 
-  return (
-    <main className="shell">
-      <section className="panel panel--login" aria-labelledby="login-title">
-        <p className="eyebrow">G7</p>
-        <h1 id="login-title" className="title">
-          Sign in with email
-        </h1>
-        <p className="lede">
-          Demo only: your email is kept in <code>sessionStorage</code> for this tab until you sign
-          out.
-        </p>
+  const nextAfterCheckIn = redirectTo ?? '/dashboard'
+  const progress = showCheckIn ? 0.55 : 0.2
 
-        <form className="form" onSubmit={handleSubmit} noValidate>
-          <label className="field">
-            <span className="field__label">Email</span>
-            <input
-              id="login-email"
-              type="email"
-              name="email"
-              autoComplete="email"
-              inputMode="email"
-              placeholder="you@example.com"
-              required
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-            />
-          </label>
-          {error ? (
-            <p className="error" role="alert">
-              {error}
+  return (
+    <main className="flow-shell__main">
+      <FlowShell progress={progress} backTo="/" backLabel="Back to home">
+        {showCheckIn ? (
+          <NlnCheckInFlow
+            onComplete={() => {
+              navigate('/welcome/summary', { replace: true, state: { next: nextAfterCheckIn } })
+            }}
+          />
+        ) : (
+          <div className="flow-step">
+            <nav className="flow-tabs" aria-label="Account">
+              <span className="flow-tabs__item flow-tabs__item--active">Sign in</span>
+              <Link to="/register" className="flow-tabs__item">
+                Create account
+              </Link>
+            </nav>
+
+            <h1 className="flow-step__title flow-step__title--tight">Sign in</h1>
+            <p className="flow-step__lede flow-step__lede--tight">Enter your email — then you&apos;ll complete the NLN check-in.</p>
+
+            <form className="flow-form flow-form--light" onSubmit={handleSubmit} noValidate>
+              <label className="field">
+                <span className="field__label">Email</span>
+                <input
+                  id="login-email"
+                  type="email"
+                  name="email"
+                  autoComplete="email"
+                  inputMode="email"
+                  placeholder="you@example.com"
+                  required
+                  value={value}
+                  onChange={(e) => setValue(e.target.value)}
+                />
+              </label>
+              {error ? (
+                <p className="error" role="alert">
+                  {error}
+                </p>
+              ) : null}
+              <button type="submit" className="btn flow-btn-continue" disabled={pending}>
+                {pending ? 'Signing in…' : 'Continue'}
+              </button>
+            </form>
+
+            <p className="flow-footnote">
+              New here?{' '}
+              <Link to="/register" className="flow-link">
+                Create an account
+              </Link>
             </p>
-          ) : null}
-          <button type="submit" className="btn btn--primary">
-            Continue
-          </button>
-        </form>
-      </section>
+          </div>
+        )}
+      </FlowShell>
     </main>
   )
 }

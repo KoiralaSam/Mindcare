@@ -2,16 +2,25 @@ package handler
 
 import (
 	"bytes"
+	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
+	"log"
 	"net/http"
 	"os"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/KoiralaSam/Mindcare/backend/internal/models/user"
 )
 
+// EmbersPerQuiz is added to users.daily_ember when a wellness quiz is submitted with a valid email.
+const EmbersPerQuiz = 10
+
 type WellnessQuizRequest struct {
+	Email   string            `json:"email"`
 	Age     int               `json:"age"`
 	Gender  string            `json:"gender"`
 	Answers map[string]string `json:"answers"`
@@ -23,6 +32,8 @@ type WellnessQuizResponse struct {
 	TargetColumn   string         `json:"target_column"`
 	Features       map[string]any `json:"features"`
 	FrontendResult FrontendResult `json:"frontend_result"`
+	DailyEmber     *int           `json:"daily_ember,omitempty"`
+	Streak         *int           `json:"streak,omitempty"`
 }
 
 type FrontendResult struct {
@@ -50,18 +61,184 @@ type mlPredictResponse struct {
 	TargetColumn   string `json:"target_column"`
 }
 
-func WellnessQuizHandler() http.HandlerFunc {
+func normalizeJSONInt(v any) int {
+	switch t := v.(type) {
+	case nil:
+		return 0
+	case float64:
+		return int(t)
+	case float32:
+		return int(t)
+	case int:
+		return t
+	case int64:
+		return int(t)
+	case json.Number:
+		i, err := t.Int64()
+		if err != nil {
+			return 0
+		}
+		return int(i)
+	case string:
+		n, err := strconv.Atoi(strings.TrimSpace(t))
+		if err != nil {
+			return 0
+		}
+		return n
+	default:
+		return 0
+	}
+}
+
+func anyAnswerToString(v any) string {
+	if v == nil {
+		return ""
+	}
+	switch t := v.(type) {
+	case string:
+		return t
+	case float64:
+		if t == float64(int64(t)) {
+			return strconv.FormatInt(int64(t), 10)
+		}
+		return strconv.FormatFloat(t, 'f', -1, 64)
+	case json.Number:
+		return t.String()
+	case bool:
+		if t {
+			return "1"
+		}
+		return "0"
+	default:
+		return strings.TrimSpace(fmt.Sprint(t))
+	}
+}
+
+// parseWellnessAnswers accepts:
+//   - JSON object: { "Q1": "1 3", ... } (string or numeric values per key)
+//   - JSON array: [ {"question":"Q1","answer":"1 3"}, ... ]
+func parseWellnessAnswers(raw json.RawMessage) (map[string]string, error) {
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 {
+		return nil, fmt.Errorf("answers are required")
+	}
+
+	var asStr map[string]string
+	if err := json.Unmarshal(raw, &asStr); err == nil && len(asStr) > 0 {
+		return asStr, nil
+	}
+
+	var asAny map[string]any
+	if err := json.Unmarshal(raw, &asAny); err == nil && len(asAny) > 0 {
+		out := make(map[string]string, len(asAny))
+		for k, v := range asAny {
+			out[k] = anyAnswerToString(v)
+		}
+		return out, nil
+	}
+
+	var arr []map[string]any
+	if err := json.Unmarshal(raw, &arr); err == nil && len(arr) > 0 {
+		out := make(map[string]string)
+		for _, item := range arr {
+			q := strings.TrimSpace(anyAnswerToString(item["question"]))
+			if q == "" {
+				q = strings.TrimSpace(anyAnswerToString(item["Question"]))
+			}
+			if q == "" {
+				continue
+			}
+			var a any
+			if v, ok := item["answer"]; ok {
+				a = v
+			} else {
+				a = item["Answer"]
+			}
+			out[q] = anyAnswerToString(a)
+		}
+		if len(out) > 0 {
+			return out, nil
+		}
+	}
+
+	return nil, fmt.Errorf("answers must be an object mapping question id to answer, or an array of objects with question and answer fields")
+}
+
+// decodeWellnessQuizRequest decodes POST /api/wellness-quiz bodies without unmarshaling `answers`
+// into json.RawMessage via a struct (Go 1.25+ can reject valid client payloads with opaque errors).
+// Top-level keys are read from map[string]json.RawMessage; `answers` is passed to parseWellnessAnswers.
+//
+// Client-visible 400 messages from this path:
+//   - Here: json.Unmarshal(body, &fields) failure → "invalid JSON body: …" (malformed JSON or root not an object).
+//   - parseWellnessAnswers: "answers are required" or the long "answers must be an object…" message.
+// WellnessQuizHandler adds: "age is required", "gender is required", "answers are required".
+//
+// There is no literal "invalid JSON body; expected object of question: answer" in this codebase; the
+// current prefix uses a colon ("invalid JSON body: …"). If you still see a semicolon variant, the
+// process answering :8080 is likely an old build or a different gateway—check the log line below.
+func decodeWellnessQuizRequest(body []byte) (WellnessQuizRequest, error) {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(body, &fields); err != nil {
+		log.Printf("wellness-quiz: top-level JSON unmarshal failed: %v", err)
+		return WellnessQuizRequest{}, fmt.Errorf("invalid JSON body: %v", err)
+	}
+
+	var req WellnessQuizRequest
+
+	if raw, ok := fields["email"]; ok && len(bytes.TrimSpace(raw)) > 0 && string(bytes.TrimSpace(raw)) != "null" {
+		if err := json.Unmarshal(raw, &req.Email); err != nil || strings.TrimSpace(req.Email) == "" {
+			var v any
+			if json.Unmarshal(raw, &v) == nil {
+				req.Email = strings.TrimSpace(fmt.Sprint(v))
+			}
+		}
+	}
+
+	if raw, ok := fields["age"]; ok && len(bytes.TrimSpace(raw)) > 0 {
+		var ageAny any
+		if json.Unmarshal(raw, &ageAny) == nil {
+			req.Age = normalizeJSONInt(ageAny)
+		}
+	}
+
+	if raw, ok := fields["gender"]; ok && len(bytes.TrimSpace(raw)) > 0 && string(bytes.TrimSpace(raw)) != "null" {
+		if err := json.Unmarshal(raw, &req.Gender); err != nil || strings.TrimSpace(req.Gender) == "" {
+			var v any
+			if json.Unmarshal(raw, &v) == nil {
+				req.Gender = strings.TrimSpace(fmt.Sprint(v))
+			}
+		}
+	}
+
+	rawAns, hasAnswers := fields["answers"]
+	if !hasAnswers {
+		rawAns = nil
+	}
+	answers, err := parseWellnessAnswers(rawAns)
+	if err != nil {
+		return WellnessQuizRequest{}, err
+	}
+	req.Answers = answers
+
+	return req, nil
+}
+
+func WellnessQuizHandler(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 			return
 		}
 
-		var req WellnessQuizRequest
-		dec := json.NewDecoder(r.Body)
-		dec.DisallowUnknownFields()
-		if err := dec.Decode(&req); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON body")
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "could not read request body")
+			return
+		}
+
+		req, err := decodeWellnessQuizRequest(body)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
 		if req.Age <= 0 {
@@ -87,13 +264,29 @@ func WellnessQuizHandler() http.HandlerFunc {
 		}
 
 		label := strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", pred.Prediction)))
-		writeJSON(w, http.StatusOK, WellnessQuizResponse{
+		resp := WellnessQuizResponse{
 			Prediction:     pred.Prediction,
 			PredictionCode: pred.PredictionCode,
 			TargetColumn:   pred.TargetColumn,
 			Features:       features,
 			FrontendResult: frontendResultForPrediction(label, req.Age, normalizeGender(req.Gender)),
-		})
+		}
+
+		email := strings.TrimSpace(strings.ToLower(req.Email))
+		if email != "" && db != nil {
+			if ember, streak, err := user.AddDailyEmberWithStreakRollover(db, email, EmbersPerQuiz); err == nil {
+				resp.DailyEmber = &ember
+				resp.Streak = &streak
+			}
+		}
+
+		if payload, err := json.Marshal(resp); err != nil {
+			log.Printf("wellness-quiz: marshal response: %v", err)
+		} else {
+			log.Printf("wellness-quiz: response email=%q json=%s", email, string(payload))
+		}
+
+		writeJSON(w, http.StatusOK, resp)
 	}
 }
 
@@ -237,8 +430,13 @@ func parseLikertAnswer(answer string) (int, int, bool) {
 		return 0, 0, false
 	}
 	max := 3
+	if len(parts) >= 2 {
+		if m, err := strconv.Atoi(parts[1]); err == nil && m >= 1 {
+			max = m
+		}
+	}
 	lower := strings.ToLower(answer)
-	if strings.Contains(lower, "all of the time") || strings.Contains(lower, "most of the time") || strings.Contains(lower, "at no time") {
+	if max == 3 && (strings.Contains(lower, "all of the time") || strings.Contains(lower, "most of the time") || strings.Contains(lower, "at no time")) {
 		max = 5
 	}
 	if score < 0 {
@@ -269,6 +467,13 @@ func predictionCode(label string) int {
 
 func isPositiveQuestion(question string) bool {
 	n := normalizeKey(question)
+	// NLN check-in uses ids Q1..Q13 from the frontend; invert score for “higher is better” items.
+	if strings.HasPrefix(n, "q5") || strings.HasPrefix(n, "q6") || strings.HasPrefix(n, "q7") || strings.HasPrefix(n, "q8") {
+		return true
+	}
+	if strings.HasPrefix(n, "q12") {
+		return true
+	}
 	return strings.Contains(n, "calm") || strings.Contains(n, "balanced") || strings.Contains(n, "energy") || strings.Contains(n, "hopeful")
 }
 

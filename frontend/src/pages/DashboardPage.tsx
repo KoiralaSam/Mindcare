@@ -1,51 +1,37 @@
-import { useNavigate } from 'react-router-dom'
-import { useAuth } from '../auth/AuthContext'
+import { DashboardLayout } from '../components/dashboard/DashboardLayout'
+import { TodayTasks } from '../components/dashboard/TodayTasks'
+import { useWellnessFrontendResult } from '../assessment/useWellnessFrontendResult'
 
 export function DashboardPage() {
-  const { email, signOut } = useAuth()
-  const navigate = useNavigate()
-
-  function handleSignOut() {
-    signOut()
-    navigate('/login', { replace: true })
-  }
+  const frontend = useWellnessFrontendResult()
+  const tasks = frontend?.tasks ?? []
 
   return (
-    <main className="shell shell--wide">
-      <section className="panel panel--dash" aria-labelledby="dash-title">
-        <header className="dash-header">
-          <div>
-            <p className="eyebrow">Dashboard</p>
-            <h1 id="dash-title" className="title title--sm">
-              Welcome back
-            </h1>
-            <p className="lede lede--compact">
-              Signed in as <strong>{email}</strong>
-            </p>
-          </div>
-          <button type="button" className="btn btn--ghost" onClick={handleSignOut}>
-            Sign out
-          </button>
-        </header>
-
-        <div className="dash-grid">
-          <article className="card">
-            <h2 className="card__title">Overview</h2>
-            <p className="card__text">Main workspace — add widgets, tables, or metrics here.</p>
-          </article>
-          <article className="card">
-            <h2 className="card__title">Activity</h2>
-            <p className="card__text">Recent events and notifications can live in this panel.</p>
-          </article>
-          <article className="card card--wide">
-            <h2 className="card__title">Backend</h2>
-            <p className="card__text">
-              Replace session-only auth with your API: magic links, OTP, or SSO, then store
-              sessions in HTTP-only cookies or tokens.
-            </p>
-          </article>
+    <DashboardLayout>
+      <main className="dash-app__main">
+        <div className="dash-app__main-inner dash-app__main-inner--tasks">
+          {frontend ? (
+            <>
+              <section className="dash-tasks-section" aria-labelledby="dash-tasks-heading">
+                <TodayTasks tasks={tasks} />
+              </section>
+              <p className="dash-app__disclaimer">
+                Self-check only — not a diagnosis. If you are in crisis, use local emergency or crisis lines.
+              </p>
+            </>
+          ) : (
+            <div className="dash-app__empty">
+              <p className="dash-app__empty-title">No results yet</p>
+              <p className="dash-app__empty-text">
+                Complete your wellbeing check-in to see Today&apos;s Tasks here.
+              </p>
+              <p className="dash-app__disclaimer dash-app__disclaimer--solo">
+                Self-check only — not a diagnosis. Crisis? Use local emergency or crisis lines.
+              </p>
+            </div>
+          )}
         </div>
-      </section>
-    </main>
+      </main>
+    </DashboardLayout>
   )
 }

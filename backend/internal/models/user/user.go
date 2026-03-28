@@ -112,6 +112,53 @@ WHERE email = $1`
 	return &u, nil
 }
 
+// AddDailyEmber increments daily_ember by delta for the user with the given email and returns the new total.
+func AddDailyEmber(db *sql.DB, email string, delta int) (int, error) {
+	email = strings.TrimSpace(strings.ToLower(email))
+	if email == "" {
+		return 0, ErrEmailRequired
+	}
+	if delta <= 0 {
+		return 0, fmt.Errorf("user: delta must be positive")
+	}
+	const q = `UPDATE users SET daily_ember = daily_ember + $1 WHERE email = $2 RETURNING daily_ember`
+	var n int
+	err := db.QueryRow(q, delta, email).Scan(&n)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, ErrNotFound
+	}
+	if err != nil {
+		return 0, fmt.Errorf("add daily ember: %w", err)
+	}
+	return n, nil
+}
+
+// AddDailyEmberWithStreakRollover adds delta to daily_ember; every full 100 embers adds 1 to streak
+// and rolls the remainder into daily_ember (0–99).
+func AddDailyEmberWithStreakRollover(db *sql.DB, email string, delta int) (dailyEmber int, streak int, err error) {
+	email = strings.TrimSpace(strings.ToLower(email))
+	if email == "" {
+		return 0, 0, ErrEmailRequired
+	}
+	if delta <= 0 {
+		return 0, 0, fmt.Errorf("user: delta must be positive")
+	}
+	const q = `
+UPDATE users SET
+	streak = streak + (daily_ember + $1) / 100,
+	daily_ember = (daily_ember + $1) % 100
+WHERE email = $2
+RETURNING daily_ember, streak`
+	err = db.QueryRow(q, delta, email).Scan(&dailyEmber, &streak)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, 0, ErrNotFound
+	}
+	if err != nil {
+		return 0, 0, fmt.Errorf("add daily ember rollover: %w", err)
+	}
+	return dailyEmber, streak, nil
+}
+
 // UpdateStreakAndEmber updates daily_ember and/or streak for the row matching Email.
 // Pass nil for a pointer to skip that column; 0 is valid when the pointer is non-nil.
 // Returns ErrNothingToUpdate if both arguments are nil.
@@ -152,4 +199,46 @@ func (u *User) UpdateStreakAndEmber(db *sql.DB, dailyEmber *int, streak *int) er
 		return ErrNotFound
 	}
 	return nil
+}
+
+// StreakLeaderboardRow is a nickname + streak for public rankings (no PII).
+type StreakLeaderboardRow struct {
+	Nickname string
+	Streak   int
+}
+
+// ListStreakLeaderboard returns up to limit users ordered by streak descending, then nickname.
+func ListStreakLeaderboard(db *sql.DB, limit int) ([]StreakLeaderboardRow, error) {
+	if limit < 1 {
+		limit = 1
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	const q = `
+SELECT nickname, streak
+FROM users
+ORDER BY streak DESC, nickname ASC
+LIMIT $1`
+	rows, err := db.Query(q, limit)
+	if err != nil {
+		return nil, fmt.Errorf("streak leaderboard: %w", err)
+	}
+	defer rows.Close()
+
+	var out []StreakLeaderboardRow
+	for rows.Next() {
+		var r StreakLeaderboardRow
+		if err := rows.Scan(&r.Nickname, &r.Streak); err != nil {
+			return nil, fmt.Errorf("streak leaderboard scan: %w", err)
+		}
+		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("streak leaderboard rows: %w", err)
+	}
+	if out == nil {
+		out = []StreakLeaderboardRow{}
+	}
+	return out, nil
 }
