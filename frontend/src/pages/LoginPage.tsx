@@ -30,7 +30,7 @@ export function LoginPage() {
   return (
     <main className="shell">
       <section className="panel panel--login" aria-labelledby="login-title">
-        <p className="eyebrow">G7</p>
+        <p className="eyebrow">NLN</p>
         <h1 id="login-title" className="title">
           Sign in with email
         </h1>
