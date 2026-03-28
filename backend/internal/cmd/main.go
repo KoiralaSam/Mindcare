@@ -30,13 +30,14 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/login", handler.LoginHandler(sqlDB))
+	mux.HandleFunc("POST /api/wellness-quiz", handler.WellnessQuizHandler())
 	root := withCORS(mux)
 
 	addr := os.Getenv("HTTP_ADDR")
 	if addr == "" {
 		addr = ":8080"
 	}
-	log.Printf("listening on %s (POST /api/login)", addr)
+	log.Printf("listening on %s ", addr)
 	log.Fatal(http.ListenAndServe(addr, root))
 }
 
