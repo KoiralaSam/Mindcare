@@ -58,9 +58,15 @@ migrate -path backend/migrations -database "$DATABASE_URL" down 1
 
 ## Adding a new migration
 
-1. Create the next numbered pair, e.g. `000002_add_sessions.up.sql` and `000002_add_sessions.down.sql`.
-2. Keep `down` logic able to undo `up` cleanly.
-3. Run `make migrate-up` to apply.
+Generate empty sequential `.up.sql` / `.down.sql` files with the migrate CLI (no DB connection needed):
+
+```bash
+make migrate-create NAME=add_oauth_sessions
+```
+
+That creates the next numbered pair under `backend/migrations/` (e.g. `000002_add_oauth_sessions.up.sql` and `.down.sql`). Edit both files, then apply with `make migrate-up`.
+
+Keep `down` able to undo `up` cleanly.
 
 ## Troubleshooting
 
