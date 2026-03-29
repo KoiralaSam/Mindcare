@@ -32,6 +32,7 @@ func main() {
 	mux.HandleFunc("POST /api/login", handler.LoginHandler(sqlDB))
 	mux.HandleFunc("GET /api/leaderboard", handler.LeaderboardHandler(sqlDB))
 	mux.HandleFunc("POST /api/wellness-quiz", handler.WellnessQuizHandler(sqlDB))
+	mux.HandleFunc("POST /api/task-complete", handler.TaskCompleteHandler(sqlDB))
 	root := withCORS(mux)
 
 	addr := os.Getenv("HTTP_ADDR")

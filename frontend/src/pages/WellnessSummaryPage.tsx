@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { DashboardLayout } from '../components/dashboard/DashboardLayout'
 import { useAssessment } from '../assessment/useAssessment'
@@ -26,11 +26,9 @@ function zoneLineModifier(zone: string): string {
 
 export function WellnessSummaryPage() {
   const navigate = useNavigate()
-  const location = useLocation()
   const frontend = useWellnessFrontendResult()
   const { stored } = useAssessment()
   const { wellnessCompleted, completeWellness } = useAuth()
-  const nextPath = (location.state as { next?: string } | null)?.next ?? '/dashboard'
 
   useEffect(() => {
     if (frontend) return
@@ -93,7 +91,7 @@ export function WellnessSummaryPage() {
                 className="wellness-summary__cta"
                 onClick={() => {
                   completeWellness()
-                  navigate(nextPath, { replace: true })
+                  navigate('/dashboard', { replace: true })
                 }}
               >
                 Continue to today&apos;s tasks
