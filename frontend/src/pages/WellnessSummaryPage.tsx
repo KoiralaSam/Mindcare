@@ -31,6 +31,12 @@ export function WellnessSummaryPage() {
   const { wellnessCompleted, completeWellness } = useAuth()
 
   useEffect(() => {
+    if (frontend && !wellnessCompleted) {
+      completeWellness()
+    }
+  }, [frontend, wellnessCompleted, completeWellness])
+
+  useEffect(() => {
     if (frontend) return
     if (wellnessCompleted) {
       navigate('/dashboard', { replace: true })
