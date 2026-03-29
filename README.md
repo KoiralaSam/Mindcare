@@ -92,6 +92,73 @@ npm run dev
 
 ---
 
+## Deploying to production (Vercel + external backend/ML)
+
+This repo is structured so the **frontend** is deployed to Vercel, while the **Go API** and **Python ML service** run on external hosts better suited for long-running services.
+
+### 1. Provision PostgreSQL and run migrations
+
+- Create a managed PostgreSQL instance (for example Neon, Supabase, Railway, or Render Postgres).
+- Note the connection string and set it as `DATABASE_URL` when running migrations and in the backend environment.
+- From your local machine (or CI), run the migrations against this remote database:
+
+```bash
+export DATABASE_URL='postgres://user:pass@host:5432/dbname?sslmode=require'
+make migrate-up
+```
+
+### 2. Deploy the ML service (Python FastAPI)
+
+- Use a Python-friendly host that supports long-running HTTP services (for example Render, Railway, Fly.io, or a small VM).
+- Deploy the app under `ml/mental_health_ml` so that `serve.py` runs a FastAPI + Uvicorn server exposing `/predict`.
+- Ensure model artifacts/config referenced in `ml/config.yaml` and `ml/mental_health_ml/serve.py` are available on disk.
+- Configure env vars, at minimum:
+	- `ML_HOST=0.0.0.0`
+	- `ML_PORT=<port expected by the platform>`
+- After deployment, you should have a public base URL such as `https://ml.yourdomain.com`, where `POST /predict` returns predictions.
+
+### 3. Deploy the Go backend (API server)
+
+- Use a Go-capable host for a long-running web service (for example Render Web Service, Railway, Fly.io).
+- Build/run the binary from `backend/internal/cmd/main.go` (the platform can usually run `go build ./internal/cmd` and start the resulting binary).
+- Configure environment variables on the backend host:
+	- `DATABASE_URL` → the managed Postgres URL from step 1.
+	- `ML_SERVICE_URL` → the public ML base URL from step 2 (for example `https://ml.yourdomain.com`).
+	- `GROQ_API_KEY` → your Groq API key (required for LLM-based task generation).
+	- `GROQ_MODEL` → optional model name (defaults to a sensible Groq model if omitted).
+	- `HTTP_ADDR` → listening address, usually `:8080` (follow your platform docs).
+- After deploy, you should have an HTTPS base URL such as `https://api.yourdomain.com` exposing:
+	- `POST /api/login`
+	- `POST /api/wellness-quiz`
+	- `POST /api/task-complete`
+	- `GET /api/leaderboard`
+
+> Note: The backend currently sends `Access-Control-Allow-Origin: *`, so cross-origin requests from Vercel will work without additional CORS configuration.
+
+### 4. Deploy the frontend to Vercel
+
+1. In Vercel, create a new project pointing at this repository.
+2. In project settings, set the **root directory** to `frontend`.
+3. Build settings:
+	 - Install command: `npm install`
+	 - Build command: `npm run build`
+	 - Output directory: `dist`
+4. In **Environment Variables** for the project, set:
+
+	 - `VITE_API_BASE` → the Go backend base URL from step 3 (for example `https://api.yourdomain.com`).
+
+5. Trigger a Vercel deployment. Once complete, you will get a URL such as `https://mindcare.vercel.app` for the SPA.
+
+### 5. Smoke-test the production deployment
+
+- Visit the Vercel URL and go through:
+	- Login flow (email-based login).
+	- Wellness check-in, confirming a zone/result appears.
+	- Task completion actions and leaderboard page.
+- Watch your backend and ML logs for any errors (DB connection, ML timeouts, Groq issues) and adjust environment configuration as needed.
+
+---
+
 ## Ethics and safety guidelines
 
 - Use supportive, non-judgmental language in all user-facing copy.

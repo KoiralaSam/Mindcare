@@ -1,15 +1,18 @@
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
 
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
   server: {
+    // Required when opening the app via ngrok / other tunnels (non-localhost Host header).
+    host: true,
+    allowedHosts: true,
     proxy: {
-      '/api': {
-        target: 'http://127.0.0.1:8080',
+      "/api": {
+        target: "http://127.0.0.1:8080",
         changeOrigin: true,
       },
     },
   },
-})
+});
