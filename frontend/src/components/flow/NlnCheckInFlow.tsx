@@ -118,10 +118,10 @@ export function NlnCheckInFlow({ onComplete }: Props) {
             {...slide}
             transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
           >
-            <p className="nln-checkin__brand">Project NLN</p>
+            <p className="nln-checkin__brand">Mindcare</p>
             <h1 className="nln-checkin__title">Emotional Wellbeing Check-in</h1>
             <p className="nln-checkin__body">
-              Welcome to Project NLN. This is a short self-check to help you understand where you stand emotionally
+              Welcome to Mindcare. This is a short self-check to help you understand where you stand emotionally
               right now.
             </p>
             <p className="nln-checkin__body nln-checkin__body--muted">

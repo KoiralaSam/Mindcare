@@ -1,7 +1,7 @@
 import { apiURL } from './config'
 import type { NlnAnswer } from '../assessment/nlnCheckIn'
 
-/** Max Likert scale per NLN question id (must match backend parseLikertAnswer second token). */
+/** Max Likert scale per Mindcare question id (must match backend parseLikertAnswer second token). */
 export function maxForQuestionId(questionId: string): number {
   const n = Number.parseInt(questionId.replace(/^Q/, ''), 10)
   if (Number.isNaN(n)) return 3
@@ -46,7 +46,7 @@ export type WellnessQuizAPIResponse = {
     description: string
     age_group: string
     gender: string
-    tasks: { title: string; description: string; url?: string }[]
+    tasks: { title: string; description: string; url?: string; image_url?: string }[]
   }
   daily_ember?: number
   streak?: number

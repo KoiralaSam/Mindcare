@@ -190,6 +190,7 @@ function TaskSlide({
   tapNavigate?: (direction: -1 | 1) => void
 }) {
   const embed = task.url ? getVideoEmbedUrl(task.url) : null
+  const imageURL = typeof task.image_url === 'string' && task.image_url.trim() ? task.image_url.trim() : null
   const n = index + 1
 
   function onBodyClick(e: React.MouseEvent<HTMLDivElement>) {
@@ -223,22 +224,35 @@ function TaskSlide({
       >
         <p className="dash-tasks-slide__desc">{task.description}</p>
         {embed ? (
-          <div className="dash-task-details__video dash-tasks-slide__video">
-            <iframe
-              title={`Video for task ${n}: ${task.title}`}
-              src={embed}
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-              allowFullScreen
-              loading="lazy"
-              referrerPolicy="strict-origin-when-cross-origin"
-            />
-          </div>
+          <>
+            <div className="dash-task-details__video dash-tasks-slide__video">
+              <iframe
+                title={`Video for task ${n}: ${task.title}`}
+                src={embed}
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                allowFullScreen
+                loading="lazy"
+                referrerPolicy="strict-origin-when-cross-origin"
+              />
+            </div>
+            {task.url ? (
+              <p className="dash-task-details__external">
+                <a className="dash-tasks__link" href={task.url} target="_blank" rel="noreferrer">
+                  Video not loading? Open on YouTube
+                </a>
+              </p>
+            ) : null}
+          </>
         ) : task.url ? (
           <p className="dash-task-details__external">
             <a className="dash-tasks__link" href={task.url} target="_blank" rel="noreferrer">
               Open link
             </a>
           </p>
+        ) : imageURL ? (
+          <div className="dash-task-details__video dash-tasks-slide__video">
+            <img className="dash-tasks-slide__image" src={imageURL} alt={`Task image for ${task.title}`} loading="lazy" />
+          </div>
         ) : null}
       </div>
       <footer className="dash-tasks-slide__footer">

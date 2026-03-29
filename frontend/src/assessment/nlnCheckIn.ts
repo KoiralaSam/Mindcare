@@ -1,4 +1,4 @@
-/** Mirrors questionnaire + scoring from Project NLN / nepali-mind-check.lovable.app */
+/** Mirrors questionnaire + scoring from Mindcare / nepali-mind-check.lovable.app */
 
 export type QuestionOption = { value: number; label: string }
 

@@ -59,6 +59,7 @@ go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@lat
 cat > .env <<'EOF'
 DATABASE_URL=postgres://postgres:postgres@localhost:5432/g7?sslmode=disable
 HTTP_ADDR=:8080
+GROQ_API_KEY=your_groq_api_key_here
 EOF
 
 # 3) If using local PostgreSQL and DB does not exist yet, create it

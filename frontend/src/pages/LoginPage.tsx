@@ -46,11 +46,10 @@ export function LoginPage() {
   }
 
   const nextAfterCheckIn = redirectTo ?? '/dashboard'
-  const progress = showCheckIn ? 0.55 : 0.2
 
   return (
     <main className="flow-shell__main">
-      <FlowShell progress={progress} backTo="/" backLabel="Back to home">
+      <FlowShell title="Mindcare" backTo="/" backLabel="Back to home">
         {showCheckIn ? (
           <NlnCheckInFlow
             onComplete={() => {
@@ -67,7 +66,9 @@ export function LoginPage() {
             </nav>
 
             <h1 className="flow-step__title flow-step__title--tight">Sign in</h1>
-            <p className="flow-step__lede flow-step__lede--tight">Enter your email — then you&apos;ll complete the NLN check-in.</p>
+            <p className="flow-step__lede flow-step__lede--tight">
+              Enter your email — then you&apos;ll complete the Mindcare check-in.
+            </p>
 
             <form className="flow-form flow-form--light" onSubmit={handleSubmit} noValidate>
               <label className="field">

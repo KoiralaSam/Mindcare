@@ -24,8 +24,7 @@ export function LandingPage() {
           <Link to="/" className="landing__brand">
             <span className="landing__brand-mark" aria-hidden />
             <span>
-              <span className="landing__brand-name">NLN</span>
-              <span className="landing__brand-sub">Mindcare</span>
+              <span className="landing__brand-name">Mindcare</span>
             </span>
           </Link>
           <div className="landing__nav-actions">
@@ -79,7 +78,7 @@ export function LandingPage() {
       </main>
 
       <footer className="landing__footer landing__footer--minimal">
-        <p>NLN Mindcare · supportive language, not medical or legal advice.</p>
+        <p>Mindcare · supportive language, not medical or legal advice.</p>
       </footer>
     </div>
   )

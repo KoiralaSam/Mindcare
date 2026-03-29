@@ -60,11 +60,9 @@ export function RegisterPage() {
     }
   }
 
-  const progress = showCheckIn ? 0.55 : 0.2
-
   return (
     <main className="flow-shell__main flow-shell__main--wide">
-      <FlowShell progress={progress} backTo="/" backLabel="Back to home">
+      <FlowShell title="Mindcare" backTo="/" backLabel="Back to home">
         {showCheckIn ? (
           <NlnCheckInFlow
             onComplete={() => {
@@ -82,7 +80,7 @@ export function RegisterPage() {
 
             <h1 className="flow-step__title flow-step__title--tight">Create account</h1>
             <p className="flow-step__lede flow-step__lede--tight">
-              Email, age, and gender — then the full NLN emotional wellbeing check-in (about 2 minutes).
+              Email, age, and gender — then the full Mindcare emotional wellbeing check-in (about 2 minutes).
             </p>
 
             <form className="flow-form flow-form--light" onSubmit={handleSubmit} noValidate>

@@ -4,14 +4,12 @@ import { ThemeToggle } from '../landing/ThemeToggle'
 
 type Props = {
   children: ReactNode
-  /** 0–1 for progress bar fill */
-  progress?: number
+  title?: string
   backTo?: string
   backLabel?: string
 }
 
-export function FlowShell({ children, progress = 0, backTo = '/', backLabel = 'Home' }: Props) {
-  const pct = Math.min(100, Math.max(0, Math.round(progress * 100)))
+export function FlowShell({ children, title = 'Mindcare', backTo = '/', backLabel = 'Home' }: Props) {
   return (
     <div className="flow-shell">
       <header className="flow-shell__top">
@@ -19,9 +17,7 @@ export function FlowShell({ children, progress = 0, backTo = '/', backLabel = 'H
           <Link to={backTo} className="flow-shell__back" aria-label={backLabel}>
             ←
           </Link>
-          <div className="flow-shell__progress-track" aria-hidden>
-            <div className="flow-shell__progress-fill" style={{ width: `${pct}%` }} />
-          </div>
+          <p className="flow-shell__title">{title}</p>
           <ThemeToggle />
         </div>
       </header>

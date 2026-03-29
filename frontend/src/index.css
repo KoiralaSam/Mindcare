@@ -1046,7 +1046,7 @@ button.dash-zone-pill__link {
   border-radius: 10px;
 }
 
-/* --- Landing (NLN) — calming, accessible --- */
+/* --- Landing (Mindcare) — calming, accessible --- */
 
 .landing {
   position: relative;
@@ -2048,6 +2048,17 @@ button.dash-zone-pill__link {
   gap: clamp(0.45rem, 2vw, 0.75rem);
 }
 
+.flow-shell__title {
+  flex: 1;
+  margin: 0;
+  text-align: center;
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  color: var(--heading);
+}
+
 .flow-shell__back {
   flex-shrink: 0;
   width: 2.5rem;
@@ -2066,22 +2077,6 @@ button.dash-zone-pill__link {
 
 .flow-shell__back:hover {
   border-color: var(--accent);
-}
-
-.flow-shell__progress-track {
-  flex: 1;
-  height: 10px;
-  background: var(--elevated);
-  border-radius: 999px;
-  overflow: hidden;
-  border: 1px solid var(--border);
-}
-
-.flow-shell__progress-fill {
-  height: 100%;
-  border-radius: 999px;
-  background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--flow-cta) 85%, var(--accent)));
-  transition: width 0.35s ease;
 }
 
 .flow-shell__body {
@@ -2569,7 +2564,7 @@ button.dash-zone-pill__link {
   margin: 0 auto;
 }
 
-/* --- NLN check-in (lovable-style cards + motion via framer) --- */
+/* --- Mindcare check-in (lovable-style cards + motion via framer) --- */
 
 .nln-checkin {
   width: 100%;
@@ -4063,6 +4058,14 @@ button.dash-zone-pill__link {
 
 .dash-tasks-slide__video {
   margin-top: 0.85rem;
+}
+
+.dash-tasks-slide__image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .dash-tasks-slide__footer {

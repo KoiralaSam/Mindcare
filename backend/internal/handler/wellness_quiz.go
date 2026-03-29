@@ -8,7 +8,9 @@ import (
 	"io"
 	"log"
 	"net/http"
+	neturl "net/url"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -49,6 +51,7 @@ type Task struct {
 	Title       string `json:"title"`
 	Description string `json:"description"`
 	URL         string `json:"url,omitempty"`
+	ImageURL    string `json:"image_url,omitempty"`
 }
 
 type mlPredictRequest struct {
@@ -59,6 +62,66 @@ type mlPredictResponse struct {
 	Prediction     any    `json:"prediction"`
 	PredictionCode int    `json:"prediction_code"`
 	TargetColumn   string `json:"target_column"`
+}
+
+type groqChatMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+type groqChatRequest struct {
+	Model          string            `json:"model"`
+	Messages       []groqChatMessage `json:"messages"`
+	Temperature    float64           `json:"temperature"`
+	ResponseFormat map[string]string `json:"response_format,omitempty"`
+}
+
+type groqChatResponse struct {
+	Choices []struct {
+		Message groqChatMessage `json:"message"`
+	} `json:"choices"`
+}
+
+type generatedTasksPayload struct {
+	Tasks []Task `json:"tasks"`
+}
+
+var youtubeIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{6,}$`)
+
+var mediaFallbackImagePool = []string{
+	"https://images.unsplash.com/photo-1476480862126-209bfaa8edc8?auto=format&fit=crop&w=1280&q=80", // hike
+	"https://images.unsplash.com/photo-1508672019048-805c876b67e2?auto=format&fit=crop&w=1280&q=80", // journaling
+	"https://images.unsplash.com/photo-1493836512294-502baa1986e2?auto=format&fit=crop&w=1280&q=80", // tea + calm
+	"https://images.unsplash.com/photo-1485727749690-d091e8284ef3?auto=format&fit=crop&w=1280&q=80", // nature walk
+	"https://images.unsplash.com/photo-1518611012118-696072aa579a?auto=format&fit=crop&w=1280&q=80", // workout
+	"https://images.unsplash.com/photo-1506126613408-eca07ce68773?auto=format&fit=crop&w=1280&q=80", // yoga
+	"https://images.unsplash.com/photo-1434596922112-19c563067271?auto=format&fit=crop&w=1280&q=80", // breathing outdoors
+	"https://images.unsplash.com/photo-1506252374453-ef5237291d83?auto=format&fit=crop&w=1280&q=80", // stretching
+}
+
+var topicVideoCatalog = map[string][]string{
+	"breathing": {
+		"https://www.youtube.com/watch?v=inpok4MKVLM",
+		"https://www.youtube.com/watch?v=nmFUDkj1Aq0",
+	},
+	"physical": {
+		"https://www.youtube.com/watch?v=8jPQjjsBbIc",
+		"https://www.youtube.com/watch?v=hnpQrMqDoqE",
+	},
+	"reflection": {
+		"https://www.youtube.com/watch?v=DxIDKZHW3-E",
+		"https://www.youtube.com/watch?v=WWloIAQpMcQ",
+	},
+	"social": {
+		"https://www.youtube.com/watch?v=RcGyVTAoXEU",
+		"https://www.youtube.com/watch?v=iCvmsMzlF7o",
+	},
+	"general": {
+		"https://www.youtube.com/watch?v=DxIDKZHW3-E",
+		"https://www.youtube.com/watch?v=iCvmsMzlF7o",
+		"https://www.youtube.com/watch?v=WWloIAQpMcQ",
+		"https://www.youtube.com/watch?v=RcGyVTAoXEU",
+	},
 }
 
 func normalizeJSONInt(v any) int {
@@ -171,6 +234,7 @@ func parseWellnessAnswers(raw json.RawMessage) (map[string]string, error) {
 // Client-visible 400 messages from this path:
 //   - Here: json.Unmarshal(body, &fields) failure → "invalid JSON body: …" (malformed JSON or root not an object).
 //   - parseWellnessAnswers: "answers are required" or the long "answers must be an object…" message.
+//
 // WellnessQuizHandler adds: "age is required", "gender is required", "answers are required".
 //
 // There is no literal "invalid JSON body; expected object of question: answer" in this codebase; the
@@ -332,17 +396,18 @@ func fallbackPrediction(answers map[string]string) mlPredictResponse {
 
 func frontendResultForPrediction(label string, age int, gender string) FrontendResult {
 	group := ageGroup(age)
+	tasks := defaultTasksForGroup(group)
+	if generated, err := generateTasksWithGroq(label, group, gender); err == nil && len(generated) > 0 {
+		tasks = generated
+	} else if err != nil {
+		log.Printf("wellness-quiz: groq task generation failed, using defaults: %v", err)
+	}
+	tasks = ensurePhysicalTaskImages(tasks)
+
 	out := FrontendResult{
 		AgeGroup: group,
 		Gender:   gender,
-		Tasks: []Task{
-			{Title: "Read and reflect on your result", Description: "Read the full result summary slowly and identify one sentence that closely matches how you have been feeling in the last few days. This helps you move from a general result to a personal insight you can act on today."},
-			{Title: "Take a short breathing reset", Description: "Set a timer for 2 minutes and take slow breaths with a longer exhale than inhale. Focus only on your breath to lower immediate stress activation and settle your body before your next task."},
-			{Title: "Do one physical grounding activity", Description: "Take a 10-15 minute walk, light stretch, or gentle body movement. Physical movement reduces emotional overload and helps your mind regain clarity and focus."},
-			{Title: "Reach out to one trusted person", Description: "Send a simple check-in message to someone you trust and let them know how your day has been. Social contact, even brief, can reduce emotional isolation and improve resilience."},
-			{Title: "Watch a practical wellbeing video", Description: "Watch this short age-group matched video and note one tip you can apply in the next 24 hours.", URL: ageGroupVideo(group)},
-			{Title: "Watch a second support video", Description: "Watch this additional video for reinforcement and pick one small coping strategy that feels realistic for your current routine.", URL: ageGroupVideoSecondary(group)},
-		},
+		Tasks:    tasks,
 	}
 
 	switch label {
@@ -467,7 +532,7 @@ func predictionCode(label string) int {
 
 func isPositiveQuestion(question string) bool {
 	n := normalizeKey(question)
-	// NLN check-in uses ids Q1..Q13 from the frontend; invert score for “higher is better” items.
+	// Mindcare check-in uses ids Q1..Q13 from the frontend; invert score for "higher is better" items.
 	if strings.HasPrefix(n, "q5") || strings.HasPrefix(n, "q6") || strings.HasPrefix(n, "q7") || strings.HasPrefix(n, "q8") {
 		return true
 	}
@@ -529,6 +594,351 @@ func ageGroupVideoSecondary(group string) string {
 	default:
 		return "https://www.youtube.com/watch?v=iCvmsMzlF7o"
 	}
+}
+
+func defaultTasksForGroup(group string) []Task {
+	return []Task{
+		{Title: "Read and reflect on your result", Description: "Read the full result summary slowly and identify one sentence that closely matches how you have been feeling in the last few days. This helps you move from a general result to a personal insight you can act on today."},
+		{Title: "Take a short breathing reset", Description: "Set a timer for 2 minutes and take slow breaths with a longer exhale than inhale. Focus only on your breath to lower immediate stress activation and settle your body before your next task."},
+		{
+			Title:       "Do one physical grounding activity",
+			Description: "Take a 10-15 minute walk, light stretch, or gentle body movement. Physical movement reduces emotional overload and helps your mind regain clarity and focus.",
+			ImageURL:    physicalTaskImageURL(),
+		},
+		{Title: "Reach out to one trusted person", Description: "Send a simple check-in message to someone you trust and let them know how your day has been. Social contact, even brief, can reduce emotional isolation and improve resilience."},
+		{Title: "Watch a practical wellbeing video", Description: "Watch this short age-group matched video and note one tip you can apply in the next 24 hours.", URL: ageGroupVideo(group)},
+		{Title: "Watch a second support video", Description: "Watch this additional video for reinforcement and pick one small coping strategy that feels realistic for your current routine.", URL: ageGroupVideoSecondary(group)},
+	}
+}
+
+func generateTasksWithGroq(label string, group string, gender string) ([]Task, error) {
+	key := strings.TrimSpace(os.Getenv("GROQ_API_KEY"))
+	if key == "" {
+		return nil, fmt.Errorf("GROQ_API_KEY is not set")
+	}
+
+	model := strings.TrimSpace(os.Getenv("GROQ_MODEL"))
+	if model == "" {
+		model = "llama-3.1-8b-instant"
+	}
+
+	prompt := fmt.Sprintf(
+		"Generate EXACTLY 6 concise, supportive mental wellbeing tasks for zone '%s', age group '%s', gender '%s'. "+
+			"Return ONLY valid JSON object with this exact schema: "+
+			"{\"tasks\":[{\"title\":\"...\",\"description\":\"...\",\"url\":\"\",\"image_url\":\"\"}]} . "+
+			"Hard rules: "+
+			"(1) Every task must include at least one media field: either a working public YouTube URL in 'url' OR a direct HTTPS image URL in 'image_url'. "+
+			"(2) At least 2 tasks must use YouTube links, and each YouTube URL must be valid/playable. "+
+			"(3) Image URLs must be diverse and not repeated; avoid similar images. "+
+			"(4) Include at least one physical movement task (walk/stretch/exercise/yoga). "+
+			"(5) Keep language non-diagnostic and actionable. "+
+			"(6) No markdown, no prose, no code fences.",
+		label,
+		group,
+		gender,
+	)
+
+	reqBody := groqChatRequest{
+		Model: model,
+		Messages: []groqChatMessage{
+			{Role: "system", Content: "You are a wellness task generator. Output strict JSON only."},
+			{Role: "user", Content: prompt},
+		},
+		Temperature:    0.4,
+		ResponseFormat: map[string]string{"type": "json_object"},
+	}
+	body, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, "https://api.groq.com/openai/v1/chat/completions", bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+key)
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		data, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		return nil, fmt.Errorf("groq status %d: %s", resp.StatusCode, strings.TrimSpace(string(data)))
+	}
+
+	var out groqChatResponse
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	if len(out.Choices) == 0 {
+		return nil, fmt.Errorf("groq returned no choices")
+	}
+
+	content := strings.TrimSpace(out.Choices[0].Message.Content)
+	if content == "" {
+		return nil, fmt.Errorf("groq returned empty content")
+	}
+
+	var parsed generatedTasksPayload
+	if err := json.Unmarshal([]byte(content), &parsed); err != nil {
+		return nil, fmt.Errorf("groq output parse error: %w", err)
+	}
+
+	tasks := sanitizeTasks(parsed.Tasks)
+	tasks = ensureTaskMediaConstraints(tasks)
+	if len(tasks) == 0 {
+		return nil, fmt.Errorf("groq returned no usable tasks")
+	}
+	return tasks, nil
+}
+
+func sanitizeTasks(tasks []Task) []Task {
+	out := make([]Task, 0, len(tasks))
+	for _, t := range tasks {
+		title := strings.TrimSpace(t.Title)
+		desc := strings.TrimSpace(t.Description)
+		if title == "" || desc == "" {
+			continue
+		}
+		out = append(out, Task{
+			Title:       title,
+			Description: desc,
+			URL:         strings.TrimSpace(t.URL),
+			// Keep image source controlled by backend fallback pool for reliability.
+			ImageURL: "",
+		})
+	}
+	if len(out) > 6 {
+		out = out[:6]
+	}
+	return out
+}
+
+func ensurePhysicalTaskImages(tasks []Task) []Task {
+	out := make([]Task, len(tasks))
+	copy(out, tasks)
+	for i := range out {
+		if strings.TrimSpace(out[i].ImageURL) != "" {
+			continue
+		}
+		if isPhysicalTask(out[i]) {
+			out[i].ImageURL = physicalTaskImageURL()
+		}
+	}
+	return out
+}
+
+func ensureTaskMediaConstraints(tasks []Task) []Task {
+	out := make([]Task, len(tasks))
+	copy(out, tasks)
+
+	usedImages := map[string]struct{}{}
+	for i := range out {
+		rawURL := strings.TrimSpace(out[i].URL)
+		normalizedURL, ok := normalizeYouTubeTaskURL(out[i].URL)
+		if ok {
+			out[i].URL = normalizedURL
+		} else {
+			out[i].URL = ""
+		}
+		// If model requested a video task, replace with topic-specific known-good YouTube URL.
+		if rawURL != "" {
+			out[i].URL = topicSpecificVideoURL(out[i], i)
+		}
+
+		img := strings.TrimSpace(out[i].ImageURL)
+		if img != "" {
+			if _, exists := usedImages[img]; exists {
+				img = ""
+			} else {
+				usedImages[img] = struct{}{}
+			}
+		}
+
+		// Physical tasks should always show an image when no valid video URL exists.
+		if out[i].URL == "" && img == "" && isPhysicalTask(out[i]) {
+			img = nextUniqueImage(i, usedImages)
+			usedImages[img] = struct{}{}
+		}
+
+		// Hard guarantee: every task must have either YouTube URL or image.
+		if out[i].URL == "" && img == "" {
+			img = nextUniqueImage(i, usedImages)
+			usedImages[img] = struct{}{}
+		}
+
+		out[i].ImageURL = img
+	}
+
+	// Ensure at least two topic-specific known-good YouTube links.
+	videoCount := 0
+	for i := range out {
+		if out[i].URL != "" {
+			videoCount++
+		}
+	}
+	for _, i := range videoCandidateOrder(out) {
+		if videoCount >= 2 {
+			break
+		}
+		if out[i].URL != "" {
+			continue
+		}
+		out[i].URL = topicSpecificVideoURL(out[i], i)
+		out[i].ImageURL = ""
+		videoCount++
+	}
+
+	return out
+}
+
+func normalizeYouTubeTaskURL(raw string) (string, bool) {
+	s := strings.TrimSpace(raw)
+	if s == "" {
+		return "", false
+	}
+	u, err := neturl.Parse(s)
+	if err != nil || u.Host == "" {
+		return "", false
+	}
+
+	host := strings.ToLower(strings.TrimPrefix(u.Hostname(), "www."))
+	extractID := func(v string) (string, bool) {
+		v = strings.TrimSpace(v)
+		if !youtubeIDPattern.MatchString(v) {
+			return "", false
+		}
+		return v, true
+	}
+
+	var id string
+	switch host {
+	case "youtu.be":
+		first := strings.Trim(strings.Split(strings.TrimPrefix(u.Path, "/"), "/")[0], " ")
+		if v, ok := extractID(first); ok {
+			id = v
+		}
+	case "youtube.com", "m.youtube.com", "youtube-nocookie.com":
+		if v, ok := extractID(u.Query().Get("v")); ok {
+			id = v
+			break
+		}
+		p := strings.TrimPrefix(strings.TrimSpace(u.Path), "/")
+		parts := strings.Split(p, "/")
+		if len(parts) >= 2 {
+			switch parts[0] {
+			case "embed", "shorts", "live":
+				if v, ok := extractID(parts[1]); ok {
+					id = v
+				}
+			}
+		}
+	default:
+		return "", false
+	}
+
+	if id == "" {
+		return "", false
+	}
+	return "https://www.youtube.com/watch?v=" + id, true
+}
+
+func nextUniqueImage(seed int, used map[string]struct{}) string {
+	if len(mediaFallbackImagePool) == 0 {
+		return physicalTaskImageURL()
+	}
+	for i := 0; i < len(mediaFallbackImagePool); i++ {
+		idx := (seed + i) % len(mediaFallbackImagePool)
+		candidate := mediaFallbackImagePool[idx]
+		if _, exists := used[candidate]; exists {
+			continue
+		}
+		return candidate
+	}
+	// If all are used, cycle with seed to keep deterministic behavior.
+	return mediaFallbackImagePool[seed%len(mediaFallbackImagePool)]
+}
+
+func topicSpecificVideoURL(task Task, seed int) string {
+	topic := taskTopic(task)
+	videos := topicVideoCatalog[topic]
+	if len(videos) == 0 {
+		videos = topicVideoCatalog["general"]
+	}
+	if len(videos) == 0 {
+		return ""
+	}
+	return videos[seed%len(videos)]
+}
+
+func taskTopic(task Task) string {
+	text := strings.ToLower(strings.TrimSpace(task.Title + " " + task.Description))
+	switch {
+	case strings.Contains(text, "breath"), strings.Contains(text, "calm"), strings.Contains(text, "meditat"):
+		return "breathing"
+	case strings.Contains(text, "walk"), strings.Contains(text, "stretch"), strings.Contains(text, "physical"), strings.Contains(text, "exercise"), strings.Contains(text, "movement"), strings.Contains(text, "workout"), strings.Contains(text, "yoga"):
+		return "physical"
+	case strings.Contains(text, "reflect"), strings.Contains(text, "journal"), strings.Contains(text, "write"), strings.Contains(text, "result"):
+		return "reflection"
+	case strings.Contains(text, "trusted"), strings.Contains(text, "friend"), strings.Contains(text, "family"), strings.Contains(text, "reach out"), strings.Contains(text, "talk"):
+		return "social"
+	default:
+		return "general"
+	}
+}
+
+func videoCandidateOrder(tasks []Task) []int {
+	indices := make([]int, 0, len(tasks))
+	high := make([]int, 0, len(tasks))
+	med := make([]int, 0, len(tasks))
+	low := make([]int, 0, len(tasks))
+	for i := range tasks {
+		score := taskVideoSuitability(tasks[i])
+		switch {
+		case score >= 3:
+			high = append(high, i)
+		case score == 2:
+			med = append(med, i)
+		default:
+			low = append(low, i)
+		}
+	}
+	indices = append(indices, high...)
+	indices = append(indices, med...)
+	indices = append(indices, low...)
+	return indices
+}
+
+func taskVideoSuitability(task Task) int {
+	text := strings.ToLower(strings.TrimSpace(task.Title + " " + task.Description))
+	switch {
+	case strings.Contains(text, "watch"), strings.Contains(text, "video"), strings.Contains(text, "guided"):
+		return 3
+	case strings.Contains(text, "breath"), strings.Contains(text, "stretch"), strings.Contains(text, "meditat"), strings.Contains(text, "exercise"), strings.Contains(text, "yoga"):
+		return 2
+	default:
+		return 1
+	}
+}
+
+func isPhysicalTask(task Task) bool {
+	text := strings.ToLower(strings.TrimSpace(task.Title + " " + task.Description))
+	return strings.Contains(text, "physical") ||
+		strings.Contains(text, "walk") ||
+		strings.Contains(text, "stretch") ||
+		strings.Contains(text, "exercise") ||
+		strings.Contains(text, "movement") ||
+		strings.Contains(text, "workout") ||
+		strings.Contains(text, "yoga")
+}
+
+func physicalTaskImageURL() string {
+	return "https://images.unsplash.com/photo-1506126613408-eca07ce68773?auto=format&fit=crop&w=1280&q=80"
 }
 
 func normalizeKey(s string) string {
